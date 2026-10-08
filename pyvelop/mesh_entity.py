@@ -303,6 +303,7 @@ class AdapterInfo(MeshSerialiser):
             "reservation_description",
             "rssi_dbm",
             "signal_strength",
+            "snr_db",
             "type",
         }
     )
@@ -319,6 +320,7 @@ class AdapterInfo(MeshSerialiser):
     reservation_description: str | None = None
     rssi_dbm: int | None = None
     signal_strength: SignalStrength | None = None
+    snr_db: int | None = None
     type: ConnectionType = ConnectionType.UNKNOWN
 
 
@@ -933,6 +935,17 @@ class MeshEntity(ABC):
                 # dBm, so only let it replace the wireless details when it is a plausible RSSI.
                 if (rssi_dbm := self._rssi_dbm(nnc.get("wireless", {}).get("signalDecibels"))) is not None:
                     props_nnc.update({"rssi_dbm": rssi_dbm, "signal_strength": self._signal_strength_to_text(rssi_dbm)})
+                # A positive node-scoped signalDecibels tracks the dBm reading with a near-constant offset (~91-97),
+                # consistent with a signal-to-noise ratio, so expose it as such.
+                snr: Any = nnc.get("wireless", {}).get("signalDecibels")
+                if isinstance(snr, int) and not isinstance(snr, bool) and snr > 0:
+                    props_nnc["snr_db"] = snr
+                # The mesh-scoped snapshot can keep a reading from a node the client has since left (its entries are
+                # not refreshed by every node), so don't report that reading against the node the client is on now.
+                snapshot_node: str | None = wifi_info[0].get("node_id") if wifi_info else None
+                live_node: str | None = nnc.get("parent_id") if nnc.get("wireless") else None
+                if snapshot_node and live_node and snapshot_node != live_node and "rssi_dbm" not in props_nnc:
+                    props_nnc.update({"rssi_dbm": None, "signal_strength": None})
                 _update_and_log_audit(
                     props_nnc,
                     EntityDataProperties.NODE_NETWORK_CONNECTIONS.value,

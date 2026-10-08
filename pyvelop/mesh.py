@@ -1554,7 +1554,7 @@ class Mesh:
             if mac := conn.get("macAddress"):
                 net_conns[mac.lower()].append(conn)
         node_wifi_by_mac = {
-            conn.get("macAddress").lower(): conn
+            conn.get("macAddress").lower(): {**conn, "node_id": node.get("deviceID")}
             for node in mesh_details.get("GET_NODE_WIRELESS_CONNECTIONS", {}).get("nodeWirelessConnections", [])
             for conn in node.get("connections", [])
             if conn.get("macAddress")
@@ -1821,6 +1821,31 @@ class Mesh:
                             )
                         )
             elif isinstance(node_or_device, DeviceEntity) and node_or_device.status:
+                # region #-- a node's own wireless association table is the most current location --#
+                # GET_DEVICES and the mesh-scoped wireless snapshot can both lag behind a client that has moved
+                # between nodes, so a wireless entry in a node-scoped GET_NETWORK_CONNECTIONS takes precedence.
+                live_parent: str | None = next(
+                    (
+                        n.get("parent_id")
+                        for n in cast(
+                            list[dict[str, Any]],
+                            node_or_device.raw_details.get(EntityDataProperties.NODE_NETWORK_CONNECTIONS, []),
+                        )
+                        if n.get("wireless") and n.get("parent_id")
+                    ),
+                    None,
+                )
+                if live_parent is not None:
+                    parent_node = live_parent
+                    audit_history.append(
+                        AttributeAuditEntry(
+                            EntityDataProperties.NODE_NETWORK_CONNECTIONS.value,
+                            parent_node,
+                            kind=AttributeAction.REPLACE,
+                        )
+                    )
+                # endregion
+
                 if not parent_node:
                     # region #-- let's look in the wireless node connections for a parent --#
                     adapter_macs: set[str] = {
