@@ -962,13 +962,10 @@ class MeshEntity(ABC):
             _update_and_log_audit(
                 {"connected": adapter_conn_state}, EntityDataProperties.DEVICE_DETAILS.value, index=idx
             )
-            if not props.get("connected") and wifi_info:
-                _update_and_log_audit(
-                    {"connected": True},
-                    EntityDataProperties.WIRELESS_CONNECTION_DETAILS.value,
-                    index=idx,
-                )
-            elif props.get("connected") and conn_type == ConnectionType.WIRELESS and not wifi_info:
+            # A mesh-scoped snapshot entry on its own is not evidence of a connection: entries can persist for days
+            # after a client has gone (e.g. a host that moved from Wi-Fi to Ethernet keeps its old Wi-Fi record).
+            # Connection comes from GET_DEVICES or a node-scoped GET_NETWORK_CONNECTIONS entry (below).
+            if props.get("connected") and conn_type == ConnectionType.WIRELESS and not wifi_info:
                 _update_and_log_audit(
                     {"connected": False},
                     EntityDataProperties.WIRELESS_CONNECTION_DETAILS.value,
