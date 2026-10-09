@@ -473,6 +473,11 @@ class SpeedtestResult(MeshSerialiser):
         object.__setattr__(self, "friendly_status", _friendly_status)
 
 
+# GetNodesWirelessNetworkConnections is only updated when a refresh is requested (the Linksys app does this when it
+# is opened), so request one periodically. It is requested after a gather so the next gather reads the result.
+WIRELESS_REFRESH_INTERVAL: Final[int] = 300
+
+
 def _process_speedtest_results(results: dict[str, Any]) -> SpeedtestResult:
     """Build a SpeedtestResult object from the provisded results."""
 
@@ -1459,6 +1464,7 @@ class Mesh:
         self._capabilities: Mapping[ActionKey, MeshCapability] = copy.deepcopy(type(self)._BOOTSTRAP_CAPABILITIES)
         self._disable_redaction: bool = disable_redaction
         self._last_snapshot: MeshSnapshot | None = None
+        self._last_wireless_refresh: float = 0.0
         self._password: str = password
         self._supplementary_redactions: dict[str, set[str]] | None = supplementary_redactions
 
@@ -2029,6 +2035,11 @@ class Mesh:
         ret_mesh_details.update(node_details)
         # endregion
 
+        # region #-- ask the mesh to refresh its wireless connection snapshot, ready for the next gather --#
+        if "GET_NODE_WIRELESS_CONNECTIONS" in mesh_details:
+            await self._async_refresh_wireless_connections()
+        # endregion
+
         # region #-- check if we need to reset capability validity --#
         # this is based on either a reboot or firmware version change.
         if previous_primary_node is not None:
@@ -2054,6 +2065,19 @@ class Mesh:
         # endregion
 
         return ret_mesh_details
+
+    async def _async_refresh_wireless_connections(self) -> None:
+        """Request a refresh of the mesh-scoped wireless connection snapshot, at most every WIRELESS_REFRESH_INTERVAL."""
+
+        if time.monotonic() - self._last_wireless_refresh < WIRELESS_REFRESH_INTERVAL:
+            return
+        if (cap := self._find_capability("REFRESH_NODE_WIRELESS_CONNECTIONS")) is None:
+            return
+        self._last_wireless_refresh = time.monotonic()
+        try:
+            await cap.async_execute()
+        except Exception as exc:  # noqa: BLE001 - a failed refresh must not fail the gather
+            _LOGGER_VERBOSE.debug("wireless connection refresh failed: %s", exc)
 
     async def _async_gather_mesh_details(
         self, track_time: bool, capabilities: Iterable[MeshCapability]

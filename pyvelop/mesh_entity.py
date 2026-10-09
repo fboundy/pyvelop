@@ -302,6 +302,7 @@ class AdapterInfo(MeshSerialiser):
             "reservation",
             "reservation_description",
             "rssi_dbm",
+            "rssi_updated",
             "signal_strength",
             "snr_db",
             "type",
@@ -319,6 +320,7 @@ class AdapterInfo(MeshSerialiser):
     reservation: bool = False
     reservation_description: str | None = None
     rssi_dbm: int | None = None
+    rssi_updated: dt.datetime | None = None
     signal_strength: SignalStrength | None = None
     snr_db: int | None = None
     type: ConnectionType = ConnectionType.UNKNOWN
@@ -878,9 +880,13 @@ class MeshEntity(ABC):
                 raise ValueError("Unexpected wi-fi data")
             if wifi_info:
                 rssi_dbm: int | None = self._rssi_dbm(wifi_info[0].get("wireless", {}).get("signalDecibels"))
+                rssi_updated: dt.datetime | None = None
+                with contextlib.suppress(TypeError, ValueError):
+                    rssi_updated = dt.datetime.fromisoformat(wifi_info[0].get("timestamp"))
                 props_wifi = {
                     "negotiated_mbps": wifi_info[0].get("negotiatedMbps"),
                     "rssi_dbm": rssi_dbm,
+                    "rssi_updated": rssi_updated if rssi_dbm is not None else None,
                     "signal_strength": self._signal_strength_to_text(rssi_dbm),
                 }
                 if band := wifi_info[0].get("wireless", {}).get("band"):
@@ -949,7 +955,7 @@ class MeshEntity(ABC):
                 snapshot_node: str | None = wifi_info[0].get("node_id") if wifi_info else None
                 live_node: str | None = nnc.get("parent_id") if nnc.get("wireless") else None
                 if snapshot_node and live_node and snapshot_node != live_node and "rssi_dbm" not in props_nnc:
-                    props_nnc.update({"rssi_dbm": None, "signal_strength": None})
+                    props_nnc.update({"rssi_dbm": None, "rssi_updated": None, "signal_strength": None})
                 _update_and_log_audit(
                     props_nnc,
                     EntityDataProperties.NODE_NETWORK_CONNECTIONS.value,
