@@ -942,7 +942,14 @@ class MeshEntity(ABC):
                 # Node-scoped GetNetworkConnections can report a positive signalDecibels (e.g. 24) that is not
                 # dBm, so only let it replace the wireless details when it is a plausible RSSI.
                 if (rssi_dbm := self._rssi_dbm(nnc.get("wireless", {}).get("signalDecibels"))) is not None:
-                    props_nnc.update({"rssi_dbm": rssi_dbm, "signal_strength": self._signal_strength_to_text(rssi_dbm)})
+                    # this reading replaces the snapshot's, so the snapshot's timestamp no longer applies
+                    props_nnc.update(
+                        {
+                            "rssi_dbm": rssi_dbm,
+                            "rssi_updated": None,
+                            "signal_strength": self._signal_strength_to_text(rssi_dbm),
+                        }
+                    )
                 if band := nnc.get("wireless", {}).get("band"):
                     props_nnc["band"] = band
                 # A positive node-scoped signalDecibels tracks the dBm reading with a near-constant offset (~91-97),
